@@ -1,0 +1,710 @@
+import java.awt.BorderLayout;
+import java.awt.Color;
+import java.awt.GridBagConstraints;
+import java.awt.GridBagLayout;
+import java.awt.GridLayout;
+import java.awt.Insets;
+import java.io.File;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.io.PrintWriter;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Statement;
+import java.text.DecimalFormat;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.List;
+import javax.swing.BorderFactory;
+import javax.swing.JButton;
+import javax.swing.JComboBox;
+import javax.swing.JFileChooser;
+import javax.swing.JFrame;
+import javax.swing.JLabel;
+import javax.swing.JOptionPane;
+import javax.swing.JPanel;
+import javax.swing.JScrollPane;
+import javax.swing.JTabbedPane;
+import javax.swing.JTable;
+import javax.swing.JTextField;
+import javax.swing.SwingUtilities;
+import javax.swing.UIManager;
+import javax.swing.table.DefaultTableModel;
+
+public class EnhancedMarksReport extends JFrame {
+    // Database connection parameters
+    private static final String URL = "jdbc:oracle:thin:@localhost:1521:XE";
+    private static final String USER = "student_user";
+    private static final String PASSWORD = "password"; // Replace with your Oracle password
+    private static final String[] SUBJECTS = {"Mathematics", "Science", "English", "History", "Geography", "Computer Science"};
+
+    // Class-level variables
+    private JTextField tfRoll, tfName, tfClass;
+    private JComboBox<String> cbSubject;
+    private JTextField tfMarks;
+    private JTable resultTable;
+    private DefaultTableModel tableModel;
+    private JLabel statusLabel;
+    private JButton btnSearch, btnExport, btnClear, btnInsert, btnUpdate, btnDelete, btnSort;
+    private JTabbedPane tabbedPane;
+
+    // For insert/update form
+    private JTextField tfInsertRoll, tfInsertName, tfInsertClass;
+    private JComboBox<String> cbInsertSubject;
+    private JTextField tfInsertMarks;
+    private JTextField tfMaths, tfScience, tfEnglish, tfHistory, tfGeography, tfComputer;
+    private JButton btnSaveStudent, btnClearForm;
+
+    public EnhancedMarksReport() {
+        setTitle("Student Marks Management System");
+        setSize(900, 650);
+        setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        setLocationRelativeTo(null);
+
+        initComponents();
+        setupLayout();
+
+        setVisible(true);
+    }
+
+    private void initComponents() {
+        tabbedPane = new JTabbedPane();
+        
+        tfRoll = new JTextField(10);
+        tfName = new JTextField(15);
+        tfClass = new JTextField(5);
+        tfMarks = new JTextField(5);
+        cbSubject = new JComboBox<>();
+        cbSubject.addItem("Select Subject");
+        for (String subject : SUBJECTS) {
+            cbSubject.addItem(subject);
+        }
+    
+        btnSearch = new JButton("Search");
+        btnExport = new JButton("Export");
+        btnClear = new JButton("Clear");
+        btnInsert = new JButton("Add New");
+        btnUpdate = new JButton("Update");
+        btnDelete = new JButton("Delete");
+        btnSort = new JButton("Sort by Total");
+    
+        String[] columns = {"Roll No.", "Name", "Class", "Mathematics", "Science", "English", 
+                           "History", "Geography", "Computer Science", "Total", "Percentage", "Rank"};
+        tableModel = new DefaultTableModel(columns, 0) {
+            @Override
+            public boolean isCellEditable(int row, int column) {
+                return false;
+            }
+        };
+        resultTable = new JTable(tableModel);
+        resultTable.setAutoResizeMode(JTable.AUTO_RESIZE_ALL_COLUMNS);
+        resultTable.getTableHeader().setReorderingAllowed(false);
+        
+        resultTable.getSelectionModel().addListSelectionListener(e -> {
+            if (!e.getValueIsAdjusting() && resultTable.getSelectedRow() != -1) {
+                populateFieldsFromSelection();
+            }
+        });
+    
+        statusLabel = new JLabel("Ready");
+        statusLabel.setForeground(Color.BLUE);
+    
+        tfInsertRoll = new JTextField(10);
+        tfInsertName = new JTextField(20);
+        tfInsertClass = new JTextField(5);
+        cbInsertSubject = new JComboBox<>(SUBJECTS);
+        tfInsertMarks = new JTextField(5);
+        
+        tfMaths = new JTextField(5);
+        tfScience = new JTextField(5);
+        tfEnglish = new JTextField(5);
+        tfHistory = new JTextField(5);
+        tfGeography = new JTextField(5);
+        tfComputer = new JTextField(5);
+        
+        btnSaveStudent = new JButton("Save");
+        btnClearForm = new JButton("Clear");
+    
+        btnSearch.addActionListener(e -> performSearch());
+        btnExport.addActionListener(e -> exportResults());
+        btnClear.addActionListener(e -> clearFields());
+        btnInsert.addActionListener(e -> tabbedPane.setSelectedIndex(1));
+        btnUpdate.addActionListener(e -> updateSelectedStudent());
+        btnDelete.addActionListener(e -> deleteSelectedStudent());
+        btnSort.addActionListener(e -> sortByTotal());
+        btnSaveStudent.addActionListener(e -> saveStudent());
+        btnClearForm.addActionListener(e -> clearInsertForm());
+    }
+    
+    private JPanel createDataEntryPanel() {
+        JPanel panel = new JPanel(new GridBagLayout());
+        panel.setBorder(BorderFactory.createEmptyBorder(20, 20, 20, 20));
+        
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.insets = new Insets(5, 5, 5, 5);
+        gbc.anchor = GridBagConstraints.WEST;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        
+        gbc.gridx = 0; gbc.gridy = 0;
+        panel.add(new JLabel("Roll Number:"), gbc);
+        gbc.gridx = 1; gbc.weightx = 1.0;
+        panel.add(tfInsertRoll, gbc);
+        
+        gbc.gridx = 0; gbc.gridy = 1; gbc.weightx = 0;
+        panel.add(new JLabel("Name:"), gbc);
+        gbc.gridx = 1; gbc.weightx = 1.0;
+        panel.add(tfInsertName, gbc);
+        
+        gbc.gridx = 0; gbc.gridy = 2; gbc.weightx = 0;
+        panel.add(new JLabel("Class:"), gbc);
+        gbc.gridx = 1; gbc.weightx = 1.0;
+        panel.add(tfInsertClass, gbc);
+        
+        JPanel marksPanel = new JPanel(new GridLayout(6, 2, 10, 5));
+        marksPanel.setBorder(BorderFactory.createTitledBorder("Subject Marks"));
+        
+        marksPanel.add(new JLabel("Mathematics:"));
+        marksPanel.add(tfMaths);
+        marksPanel.add(new JLabel("Science:"));
+        marksPanel.add(tfScience);
+        marksPanel.add(new JLabel("English:"));
+        marksPanel.add(tfEnglish);
+        marksPanel.add(new JLabel("History:"));
+        marksPanel.add(tfHistory);
+        marksPanel.add(new JLabel("Geography:"));
+        marksPanel.add(tfGeography);
+        marksPanel.add(new JLabel("Computer Science:"));
+        marksPanel.add(tfComputer);
+        
+        gbc.gridx = 0; gbc.gridy = 3; gbc.gridwidth = 2; gbc.weightx = 1.0;
+        panel.add(marksPanel, gbc);
+        
+        gbc.gridx = 0; gbc.gridy = 4; gbc.gridwidth = 2;
+        gbc.anchor = GridBagConstraints.CENTER;
+        JPanel buttonPanel = new JPanel();
+        buttonPanel.add(btnSaveStudent);
+        buttonPanel.add(btnClearForm);
+        panel.add(buttonPanel, gbc);
+        
+        return panel;
+    }
+
+    private void setupLayout() {
+        JPanel searchPanel = createSearchPanel();
+        JPanel dataEntryPanel = createDataEntryPanel();
+        
+        tabbedPane.addTab("Search & View", createViewPanel(searchPanel));
+        tabbedPane.addTab("Add/Edit Student", dataEntryPanel);
+        
+        setLayout(new BorderLayout());
+        add(tabbedPane, BorderLayout.CENTER);
+        
+        JPanel statusPanel = new JPanel(new BorderLayout());
+        statusPanel.add(statusLabel, BorderLayout.WEST);
+        add(statusPanel, BorderLayout.SOUTH);
+    }
+    
+    private JPanel createSearchPanel() {
+        JPanel searchPanel = new JPanel(new GridBagLayout());
+        searchPanel.setBorder(BorderFactory.createTitledBorder("Search Criteria"));
+        
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.insets = new Insets(5, 5, 5, 5);
+        gbc.anchor = GridBagConstraints.WEST;
+        
+        gbc.gridx = 0; gbc.gridy = 0;
+        searchPanel.add(new JLabel("Roll No:"), gbc);
+        gbc.gridx = 1;
+        searchPanel.add(tfRoll, gbc);
+        gbc.gridx = 2;
+        searchPanel.add(new JLabel("Name:"), gbc);
+        gbc.gridx = 3;
+        searchPanel.add(tfName, gbc);
+        
+        gbc.gridx = 0; gbc.gridy = 1;
+        searchPanel.add(new JLabel("Class:"), gbc);
+        gbc.gridx = 1;
+        searchPanel.add(tfClass, gbc);
+        gbc.gridx = 2;
+        searchPanel.add(new JLabel("Subject:"), gbc);
+        gbc.gridx = 3;
+        searchPanel.add(cbSubject, gbc);
+        
+        gbc.gridx = 0; gbc.gridy = 2;
+        searchPanel.add(new JLabel("Marks:"), gbc);
+        gbc.gridx = 1;
+        searchPanel.add(tfMarks, gbc);
+        
+        return searchPanel;
+    }
+    
+    private JPanel createViewPanel(JPanel searchPanel) {
+        JPanel viewPanel = new JPanel(new BorderLayout());
+        viewPanel.add(searchPanel, BorderLayout.NORTH);
+        viewPanel.add(new JScrollPane(resultTable), BorderLayout.CENTER);
+        
+        JPanel buttonPanel = new JPanel();
+        buttonPanel.add(btnSearch);
+        buttonPanel.add(btnSort);
+        buttonPanel.add(btnUpdate);
+        buttonPanel.add(btnDelete);
+        buttonPanel.add(btnInsert);
+        buttonPanel.add(btnExport);
+        buttonPanel.add(btnClear);
+        viewPanel.add(buttonPanel, BorderLayout.SOUTH);
+        
+        return viewPanel;
+    }
+    
+    private void performSearch() {
+        String subject = (String) cbSubject.getSelectedItem();
+        searchRecords(subject);
+    }
+
+    private void searchRecords(String subject) {
+        StringBuilder queryBuilder = new StringBuilder(
+            "SELECT s.student_id, s.roll_number, s.name, s.class_name, " +
+            "MAX(CASE WHEN m.subject = 'Mathematics' THEN NVL(TO_NUMBER(m.marks_obtained), 0) ELSE 0 END) AS Mathematics, " +
+            "MAX(CASE WHEN m.subject = 'Science' THEN NVL(TO_NUMBER(m.marks_obtained), 0) ELSE 0 END) AS Science, " +
+            "MAX(CASE WHEN m.subject = 'English' THEN NVL(TO_NUMBER(m.marks_obtained), 0) ELSE 0 END) AS English, " +
+            "MAX(CASE WHEN m.subject = 'History' THEN NVL(TO_NUMBER(m.marks_obtained), 0) ELSE 0 END) AS History, " +
+            "MAX(CASE WHEN m.subject = 'Geography' THEN NVL(TO_NUMBER(m.marks_obtained), 0) ELSE 0 END) AS Geography, " +
+            "MAX(CASE WHEN m.subject = 'Computer Science' THEN NVL(TO_NUMBER(m.marks_obtained), 0) ELSE 0 END) AS ComputerScience " +
+            "FROM students s LEFT JOIN marks m ON s.student_id = m.student_id WHERE 1=1 "
+        );
+                      
+        List<String> conditions = new ArrayList<>();
+        List<Object> parameters = new ArrayList<>();
+        
+        String roll = tfRoll.getText().trim();
+        String name = tfName.getText().trim();
+        String className = tfClass.getText().trim();
+        String marksStr = tfMarks.getText().trim();
+        
+        if (!roll.isEmpty()) {
+            conditions.add("AND LOWER(s.roll_number) LIKE LOWER(?)");
+            parameters.add("%" + roll + "%");
+        }
+        
+        if (!name.isEmpty()) {
+            conditions.add("AND LOWER(s.name) LIKE LOWER(?)");
+            parameters.add("%" + name + "%");
+        }
+        
+        if (!className.isEmpty()) {
+            conditions.add("AND LOWER(s.class_name) LIKE LOWER(?)");
+            parameters.add("%" + className + "%");
+        }
+        
+        if (!subject.equals("Select Subject") && !subject.isEmpty()) {
+            conditions.add("AND EXISTS (SELECT 1 FROM marks m2 WHERE m2.student_id = s.student_id AND LOWER(m2.subject) = LOWER(?))");
+            parameters.add(subject);
+        }
+        
+        if (!marksStr.isEmpty() && marksStr.matches("\\d+")) {
+            int marks = Integer.parseInt(marksStr);
+            conditions.add("AND EXISTS (SELECT 1 FROM marks m2 WHERE m2.student_id = s.student_id AND NVL(TO_NUMBER(m2.marks_obtained), 0) = ?)");
+            parameters.add(marks);
+        }
+        
+        for (String condition : conditions) {
+            queryBuilder.append(condition);
+        }
+        
+        queryBuilder.append(" GROUP BY s.student_id, s.roll_number, s.name, s.class_name");
+        
+        try (Connection conn = DriverManager.getConnection(URL, USER, PASSWORD);
+             PreparedStatement pstmt = conn.prepareStatement(queryBuilder.toString())) {
+            
+            for (int i = 0; i < parameters.size(); i++) {
+                pstmt.setObject(i + 1, parameters.get(i));
+            }
+            
+            ResultSet rs = pstmt.executeQuery();
+            processResults(rs);
+            setStatus("Search complete. " + tableModel.getRowCount() + " records found.", false);
+        } catch (SQLException e) {
+            showErrorMessage("⚠ Database error: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+    
+    private void processResults(ResultSet rs) throws SQLException {
+        tableModel.setRowCount(0);
+        List<StudentRecord> students = new ArrayList<>();
+
+        while (rs.next()) {
+            int studentId = rs.getInt("student_id");
+            String rollNumber = rs.getString("roll_number");
+            String name = rs.getString("name");
+            String className = rs.getString("class_name");
+
+            int mathMarks = rs.getObject("Mathematics") != null ? rs.getInt("Mathematics") : 0;
+            int scienceMarks = rs.getObject("Science") != null ? rs.getInt("Science") : 0;
+            int englishMarks = rs.getObject("English") != null ? rs.getInt("English") : 0;
+            int historyMarks = rs.getObject("History") != null ? rs.getInt("History") : 0;
+            int geographyMarks = rs.getObject("Geography") != null ? rs.getInt("Geography") : 0;
+            int computerMarks = rs.getObject("ComputerScience") != null ? rs.getInt("ComputerScience") : 0;
+
+            int totalMarks = mathMarks + scienceMarks + englishMarks + historyMarks + geographyMarks + computerMarks;
+            double percentage = (totalMarks / 600.0) * 100;
+
+            students.add(new StudentRecord(studentId, rollNumber, name, className, mathMarks, scienceMarks, englishMarks,
+                historyMarks, geographyMarks, computerMarks, totalMarks, percentage));
+        }
+
+        Collections.sort(students, Comparator.comparing(StudentRecord::getTotalMarks).reversed());
+        
+        int rank = 1, prevTotal = -1, sameRankCount = 0;
+        DecimalFormat df = new DecimalFormat("0.00");
+        
+        for (StudentRecord student : students) {
+            if (prevTotal != student.getTotalMarks()) {
+                rank += sameRankCount;
+                sameRankCount = 1;
+                prevTotal = student.getTotalMarks();
+            } else {
+                sameRankCount++;
+            }
+            
+            tableModel.addRow(new Object[] {
+                student.getRollNumber(), student.getName(), student.getClassName(),
+                student.getMathMarks(), student.getScienceMarks(), student.getEnglishMarks(),
+                student.getHistoryMarks(), student.getGeographyMarks(), student.getComputerMarks(),
+                student.getTotalMarks(), df.format(student.getPercentage()) + "%", rank
+            });
+        }
+    }
+    
+    private void exportResults() {
+        String roll = JOptionPane.showInputDialog(this, "Enter Roll Number (leave blank for all):");
+        String name = JOptionPane.showInputDialog(this, "Enter Student Name (leave blank for all):");
+        
+        if (roll == null || name == null) return;
+        
+        List<Integer> rowsToExport = new ArrayList<>();
+        for (int i = 0; i < tableModel.getRowCount(); i++) {
+            String rowRoll = (String) tableModel.getValueAt(i, 0);
+            String rowName = (String) tableModel.getValueAt(i, 1);
+            if ((roll.isEmpty() || rowRoll.toLowerCase().contains(roll.toLowerCase())) &&
+                (name.isEmpty() || rowName.toLowerCase().contains(name.toLowerCase()))) {
+                rowsToExport.add(i);
+            }
+        }
+        
+        if (rowsToExport.isEmpty()) {
+            showErrorMessage("No matching records found for export.");
+            return;
+        }
+        
+        JFileChooser fileChooser = new JFileChooser();
+        fileChooser.setDialogTitle("Save Export File");
+        if (fileChooser.showSaveDialog(this) != JFileChooser.APPROVE_OPTION) return;
+        
+        String filePath = fileChooser.getSelectedFile().getAbsolutePath();
+        if (!filePath.toLowerCase().endsWith(".csv")) filePath += ".csv";
+        
+        try (PrintWriter writer = new PrintWriter(new FileWriter(filePath))) {
+            writer.println("Roll Number,Name,Class,Mathematics,Science,English,History,Geography,Computer Science,Total,Percentage,Rank");
+            for (int rowIndex : rowsToExport) {
+                StringBuilder line = new StringBuilder();
+                for (int j = 0; j < tableModel.getColumnCount(); j++) {
+                    line.append(tableModel.getValueAt(rowIndex, j));
+                    if (j < tableModel.getColumnCount() - 1) line.append(",");
+                }
+                writer.println(line);
+            }
+            setStatus("✅ Successfully exported " + rowsToExport.size() + " records to " + filePath, false);
+        } catch (IOException e) {
+            showErrorMessage("Export failed: " + e.getMessage());
+        }
+    }
+    
+    private void clearFields() {
+        tfRoll.setText("");
+        tfName.setText("");
+        tfClass.setText("");
+        tfMarks.setText("");
+        cbSubject.setSelectedIndex(0);
+        tableModel.setRowCount(0);
+        setStatus("Fields cleared.", false);
+    }
+    
+    private void populateFieldsFromSelection() {
+        int selectedRow = resultTable.getSelectedRow();
+        if (selectedRow == -1) return;
+        
+        tabbedPane.setSelectedIndex(1);
+        tfInsertRoll.setText(tableModel.getValueAt(selectedRow, 0).toString());
+        tfInsertName.setText(tableModel.getValueAt(selectedRow, 1).toString());
+        tfInsertClass.setText(tableModel.getValueAt(selectedRow, 2).toString());
+        tfMaths.setText(tableModel.getValueAt(selectedRow, 3).toString());
+        tfScience.setText(tableModel.getValueAt(selectedRow, 4).toString());
+        tfEnglish.setText(tableModel.getValueAt(selectedRow, 5).toString());
+        tfHistory.setText(tableModel.getValueAt(selectedRow, 6).toString());
+        tfGeography.setText(tableModel.getValueAt(selectedRow, 7).toString());
+        tfComputer.setText(tableModel.getValueAt(selectedRow, 8).toString());
+        
+        setStatus("Selected student: " + tableModel.getValueAt(selectedRow, 1) + ". Edit details and click Save to update.", false);
+    }
+   
+    private void saveStudent() {
+        String rollNo = tfInsertRoll.getText().trim();
+        String name = tfInsertName.getText().trim();
+        String className = tfInsertClass.getText().trim();
+        String[] marks = {tfMaths.getText().trim(), tfScience.getText().trim(), tfEnglish.getText().trim(),
+                          tfHistory.getText().trim(), tfGeography.getText().trim(), tfComputer.getText().trim()};
+    
+        if (rollNo.isEmpty() || name.isEmpty() || className.isEmpty()) {
+            showErrorMessage("Please enter Roll Number, Name, and Class.");
+            return;
+        }
+    
+        int[] subjectMarks = new int[SUBJECTS.length];
+        for (int i = 0; i < SUBJECTS.length; i++) {
+            if (marks[i].isEmpty()) marks[i] = "0";
+            if (!marks[i].matches("\\d+") || (subjectMarks[i] = Integer.parseInt(marks[i])) < 0 || subjectMarks[i] > 100) {
+                showErrorMessage("Invalid marks for " + SUBJECTS[i] + ". Enter a number between 0 and 100.");
+                return;
+            }
+        }
+    
+        try (Connection conn = DriverManager.getConnection(URL, USER, PASSWORD)) {
+            conn.setAutoCommit(false);
+            int studentId = getStudentId(conn, rollNo);
+    
+            if (studentId == -1) {
+                // Insert new student
+                String insertStudentSql = "INSERT INTO students (student_id, roll_number, name, class_name) " +
+                                         "VALUES (student_id_seq.NEXTVAL, ?, ?, ?)";
+                try (PreparedStatement pstmt = conn.prepareStatement(insertStudentSql, new String[] {"STUDENT_ID"})) {
+                    pstmt.setString(1, rollNo);
+                    pstmt.setString(2, name);
+                    pstmt.setString(3, className);
+                    pstmt.executeUpdate();
+                    try (ResultSet rs = pstmt.getGeneratedKeys()) {
+                        if (rs.next()) studentId = rs.getInt(1);
+                        else throw new SQLException("Failed to retrieve student_id.");
+                    }
+                }
+                setStatus("✅ Added new student: " + name, false);
+            } else {
+                // Update existing student
+                String updateStudentSql = "UPDATE students SET name = ?, class_name = ? WHERE student_id = ?";
+                try (PreparedStatement pstmt = conn.prepareStatement(updateStudentSql)) {
+                    pstmt.setString(1, name);
+                    pstmt.setString(2, className);
+                    pstmt.setInt(3, studentId);
+                    pstmt.executeUpdate();
+                }
+                setStatus("✅ Updated student: " + name, false);
+            }
+    
+            // Insert or update marks
+            for (int i = 0; i < SUBJECTS.length; i++) {
+                String checkSql = "SELECT mark_id FROM marks WHERE student_id = ? AND subject = ?";
+                try (PreparedStatement checkStmt = conn.prepareStatement(checkSql)) {
+                    checkStmt.setInt(1, studentId);
+                    checkStmt.setString(2, SUBJECTS[i]);
+                    ResultSet rs = checkStmt.executeQuery();
+                    if (rs.next()) {
+                        String updateMarksSql = "UPDATE marks SET marks_obtained = ? WHERE student_id = ? AND subject = ?";
+                        try (PreparedStatement updateStmt = conn.prepareStatement(updateMarksSql)) {
+                            updateStmt.setString(1, String.valueOf(subjectMarks[i]));
+                            updateStmt.setInt(2, studentId);
+                            updateStmt.setString(3, SUBJECTS[i]);
+                            updateStmt.executeUpdate();
+                        }
+                    } else {
+                        String insertMarksSql = "INSERT INTO marks (mark_id, student_id, subject, marks_obtained) " +
+                                               "VALUES (mark_id_seq.NEXTVAL, ?, ?, ?)";
+                        try (PreparedStatement insertStmt = conn.prepareStatement(insertMarksSql)) {
+                            insertStmt.setInt(1, studentId);
+                            insertStmt.setString(2, SUBJECTS[i]);
+                            insertStmt.setString(3, String.valueOf(subjectMarks[i]));
+                            insertStmt.executeUpdate();
+                        }
+                    }
+                }
+            }
+    
+            conn.commit();
+            clearInsertForm();
+            performSearch();
+            JOptionPane.showMessageDialog(this, "Student information saved successfully.", "Success", JOptionPane.INFORMATION_MESSAGE);
+            tabbedPane.setSelectedIndex(0);
+        } catch (SQLException e) {
+            showErrorMessage("Database error: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+    
+    private int getStudentId(Connection conn, String rollNo) throws SQLException {
+        String sql = "SELECT student_id FROM students WHERE roll_number = ?";
+        try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setString(1, rollNo);
+            try (ResultSet rs = pstmt.executeQuery()) {
+                return rs.next() ? rs.getInt("student_id") : -1;
+            }
+        }
+    }
+    
+    private void updateSelectedStudent() {
+        int selectedRow = resultTable.getSelectedRow();
+        if (selectedRow == -1) {
+            showErrorMessage("Please select a student to update");
+            return;
+        }
+        populateFieldsFromSelection();
+    }
+    
+    private void deleteSelectedStudent() {
+        int selectedRow = resultTable.getSelectedRow();
+        if (selectedRow == -1) {
+            showErrorMessage("Please select a student to delete");
+            return;
+        }
+        
+        String rollNo = tableModel.getValueAt(selectedRow, 0).toString();
+        String name = tableModel.getValueAt(selectedRow, 1).toString();
+        
+        int confirm = JOptionPane.showConfirmDialog(this, "Delete " + name + " (" + rollNo + ")?", "Confirm Delete", JOptionPane.YES_NO_OPTION);
+        if (confirm != JOptionPane.YES_OPTION) return;
+        
+        try (Connection conn = DriverManager.getConnection(URL, USER, PASSWORD)) {
+            conn.setAutoCommit(false);
+            int studentId = getStudentId(conn, rollNo);
+            if (studentId == -1) {
+                showErrorMessage("Student not found in database");
+                return;
+            }
+            
+            try (PreparedStatement pstmt = conn.prepareStatement("DELETE FROM marks WHERE student_id = ?")) {
+                pstmt.setInt(1, studentId);
+                pstmt.executeUpdate();
+            }
+            try (PreparedStatement pstmt = conn.prepareStatement("DELETE FROM students WHERE student_id = ?")) {
+                pstmt.setInt(1, studentId);
+                pstmt.executeUpdate();
+            }
+            
+            conn.commit();
+            tableModel.removeRow(selectedRow);
+            setStatus("✅ Student " + name + " deleted", false);
+        } catch (SQLException e) {
+            showErrorMessage("Database error: " + e.getMessage());
+        }
+    }
+    
+    private void sortByTotal() {
+        if (tableModel.getRowCount() == 0) {
+            showErrorMessage("No data to sort. Please perform a search first.");
+            return;
+        }
+        
+        List<Object[]> data = new ArrayList<>();
+        for (int i = 0; i < tableModel.getRowCount(); i++) {
+            Object[] row = new Object[tableModel.getColumnCount()];
+            for (int j = 0; j < tableModel.getColumnCount(); j++) row[j] = tableModel.getValueAt(i, j);
+            data.add(row);
+        }
+        
+        data.sort((row1, row2) -> Integer.compare((Integer) row2[9], (Integer) row1[9]));
+        
+        int rank = 1, prevTotal = -1, sameRankCount = 0;
+        for (Object[] row : data) {
+            int total = (Integer) row[9];
+            if (prevTotal != total) {
+                rank += sameRankCount;
+                sameRankCount = 1;
+                prevTotal = total;
+            } else sameRankCount++;
+            row[11] = rank;
+        }
+        
+        tableModel.setRowCount(0);
+        for (Object[] row : data) tableModel.addRow(row);
+        setStatus("Table sorted by total marks", false);
+    }
+    
+    private void clearInsertForm() {
+        tfInsertRoll.setText("");
+        tfInsertName.setText("");
+        tfInsertClass.setText("");
+        tfMaths.setText("");
+        tfScience.setText("");
+        tfEnglish.setText("");
+        tfHistory.setText("");
+        tfGeography.setText("");
+        tfComputer.setText("");
+    }
+
+    private void setStatus(String message, boolean isError) {
+        statusLabel.setText(message);
+        statusLabel.setForeground(isError ? Color.RED : Color.BLUE);
+    }
+    
+    private void showErrorMessage(String message) {
+        JOptionPane.showMessageDialog(this, message, "Error", JOptionPane.ERROR_MESSAGE);
+        setStatus(message, true);
+    }
+    
+    private static class StudentRecord {
+        private final int studentId;
+        private final String rollNumber, name, className;
+        private final int mathMarks, scienceMarks, englishMarks, historyMarks, geographyMarks, computerMarks;
+        private final int totalMarks;
+        private final double percentage;
+        
+        public StudentRecord(int studentId, String rollNumber, String name, String className, int mathMarks,
+                             int scienceMarks, int englishMarks, int historyMarks, int geographyMarks, int computerMarks,
+                             int totalMarks, double percentage) {
+            this.studentId = studentId;
+            this.rollNumber = rollNumber;
+            this.name = name;
+            this.className = className;
+            this.mathMarks = mathMarks;
+            this.scienceMarks = scienceMarks;
+            this.englishMarks = englishMarks;
+            this.historyMarks = historyMarks;
+            this.geographyMarks = geographyMarks;
+            this.computerMarks = computerMarks;
+            this.totalMarks = totalMarks;
+            this.percentage = percentage;
+        }
+        
+        public int getStudentId() { return studentId; }
+        public String getRollNumber() { return rollNumber; }
+        public String getName() { return name; }
+        public String getClassName() { return className; }
+        public int getMathMarks() { return mathMarks; }
+        public int getScienceMarks() { return scienceMarks; }
+        public int getEnglishMarks() { return englishMarks; }
+        public int getHistoryMarks() { return historyMarks; }
+        public int getGeographyMarks() { return geographyMarks; }
+        public int getComputerMarks() { return computerMarks; }
+        public int getTotalMarks() { return totalMarks; }
+        public double getPercentage() { return percentage; }
+    }
+    
+    public static void main(String[] args) {
+        try {
+            for (UIManager.LookAndFeelInfo info : UIManager.getInstalledLookAndFeels()) {
+                if ("Nimbus".equals(info.getName())) {
+                    UIManager.setLookAndFeel(info.getClassName());
+                    break;
+                }
+            }
+        } catch (Exception e) {
+            try {
+                UIManager.setLookAndFeel(UIManager.getCrossPlatformLookAndFeelClassName());
+            } catch (Exception ex) {}
+        }
+        
+        SwingUtilities.invokeLater(() -> new EnhancedMarksReport());
+    }
+}
